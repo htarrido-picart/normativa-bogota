@@ -1,0 +1,330 @@
+/**
+ * File:    Normativa.cga
+ * Created: 20 Oct 2021 20:29:55 GMT
+ * Author:  Hector Tarrido-Picart
+ * Copyright: 2021 (c) Hector Tarrido Picart 
+ * Distribution: For Educational purposes only.
+ */
+
+version "2021.1"
+
+import edificio: "rules/EdificioPrimitivo.cga"
+
+@Group("Lote", 1)
+
+@Order(0)
+@Enum(true, false)
+attr manzanaEntera = false
+
+#@Range(min = 0, max = 9000)
+@Hidden
+attr LoteArea = 0
+
+@Enum("Otra calle", "AVENIDA CARACAS")
+attr CalleFrontalNombre = CalcularCalleFrontalNombre(callesCategorias)
+
+
+@Hidden
+attr areaTotalDesarollo = 0
+
+@Range(min=0, max=12)
+attr andenAvenidaCaracas = 12
+
+
+@Range(min=0, max=12)
+attr andenOtrasCalles = 5
+
+
+
+@Group("Cabidura 3D",2)
+#@Range(min = 2.4, max=10)
+@Hidden
+attr alturaMaxima = 
+	case manzanaEntera: 105
+	else: 84
+
+@Percent
+attr FachadaConVoladizo = 1.0
+
+
+@Group("Edificio Primitivo",3)
+	
+@Order(0)
+@Enum(true, false)
+attr dibujarEdificio = true
+
+@Range(min = 2.4, max=4.2)	
+attr alturaPisos = 3
+
+#@Range(min=1, max=99, stepsize = 1)
+@Hidden
+attr pisosAleatorios = rint(rand(1,20))
+
+@Enum(false, true)
+@Order(1)
+attr usarPisosAleatoreos = false
+
+const pisosMaximos =
+	case manzanaEntera: 25
+	else: 20
+
+@Order(2)
+@Range(min=1, max=25, stepsize = 1)
+attr pisos =
+		case usarPisosAleatoreos: pisosAleatorios
+		else: 1
+		
+@Range(min=0, max=100)
+attr distanciaAdicionalLateral = 0
+
+@Range(min=0, max=100)
+attr distanciaAdicionalPosterior = 0
+
+@Range(min=0, max=100)
+attr distanciaAdicionalFrontal = 0
+
+
+#Hidden
+
+@Hidden
+attr IC_Edificio = 0 
+
+
+
+
+callesCategorias = edgeAttr.getString("streetcategories")
+
+
+dist(orientation) = case orientation == "AK 20"   : andenAvenidaCaracas
+					else: andenOtrasCalles
+					
+distanciaAnden = dist(edgeAttr.getString("streetcategories")) 
+
+########################
+CalcularAnden(valor)=
+	comp(fe) {all:
+			case valor == "AK 20": 12
+			else: 5
+		}
+	
+CalcularCalleFrontalNombre(valor) = 
+	case valor == "AK 20": "AVENIDA CARACAS"
+	else: "Otra calle"
+	
+
+CalcularIC(valor) = 
+	case valor >= 800 && valor < 1200: 5.0
+	case valor >= 1200 && valor < 1500: 5.5
+	case valor >= 1500 && valor < 3000: 6.0 
+	case valor >= 3000 && valor < 5000: 7.5 
+	case valor >= 5000: 9.0
+	else: 5
+
+
+CalcularAislamientoLateral(pisos) = 
+	case pisos >= 1 && pisos <= 3: 3
+	case pisos >= 4 && pisos <= 6: 4
+	case pisos >= 7 && pisos <= 9: 6
+	case pisos >= 10 && pisos <= 12: 8.50
+	case pisos >= 13: 11
+	else: 0
+
+CalcularAislamientoPosterior(pisos) = 
+	case pisos >= 1 && pisos <= 3: 3
+	case pisos >= 4 && pisos <= 6: 5
+	case pisos >= 7 && pisos <= 9: 6.50
+	case pisos >= 10 && pisos <= 12: 9
+	case pisos >= 13: 11.50
+	else: 0
+	
+CalcularDistanciaVoladizo(calle, porcentaje)=
+	case calle == "AVENIDA CARACAS":
+		case porcentaje > 0.6 && porcentaje <= 1: 1
+		case porcentaje > 0.4 && porcentaje <= .6: 1.8
+		case porcentaje > 0 && porcentaje <= 0.4 : 2.5
+		else: 0
+	else:
+		case porcentaje > 0.5 && porcentaje <= 1: 1.0
+		case porcentaje > 0 && porcentaje <= 0.5 :1.8
+		else: 0
+
+########################
+
+@StartRule
+Lote -->
+	set(LoteArea, geometry.area())
+	cleanupGeometry(all, 0.5)
+	set(IC_Edificio, CalcularIC(LoteArea))
+	set(areaTotalDesarollo, LoteArea * IC_Edificio)
+	
+	report("Lote Area", LoteArea)
+	report("IC Maximo", IC_Edificio)
+	report("Area Maxima de Desarollo", areaTotalDesarollo)
+	report("Altura Maxima", alturaMaxima)
+	
+	print(CalcularIC(LoteArea))
+	Edificabilidad
+	
+#Regla de manuela
+Edificabilidad -->
+	case LoteArea < 800:
+		color(1,0,0)
+		report("Aviso", "No se permite construccion")	
+
+	else:
+		Anden
+
+Anden -->
+	setbackPerEdge(distanciaAnden){street.front: AndenFrontal | remainder: CalcularAislamientos}
+	
+@Hidden
+attr AislamientoLateral = 0
+
+@Hidden
+attr AislamientoPosterior = 0
+	
+
+	
+CalcularAislamientos -->
+	set(AislamientoLateral, CalcularAislamientoLateral(pisos))
+	set(AislamientoPosterior, CalcularAislamientoPosterior(pisos))
+	AislamientoPosteriorJardines 
+	#print(AislamientoLateral+ "," + AislamientoPosterior)
+
+AislamientoPosteriorJardines -->
+	setback(AislamientoPosterior){street.back: Jardines | remainder: AislamientosLateralJardines}
+
+AislamientosLateralJardines -->
+	setback(AislamientoLateral){street.side: FachadaEnLaterales  | remainder: Cabidura}
+									
+
+@Hidden
+attr dimensionBase = 0
+
+@Hidden
+attr pisosPermitidosIC = 0
+
+
+FachadaEnLaterales -->
+	case manzanaEntera: Jardines
+	else: setback(11.5){street.front: EdificioLaterales  | remainder: Jardines}
+
+EdificioLaterales -->
+	extrude(11.5)
+	EdificioLateralesPisos
+	Envelope
+	
+	
+EdificioLateralesPisos -->
+	set(dimensionBase, geometry.area())
+	set(pisosPermitidosIC, areaTotalDesarollo/dimensionBase)
+	
+	edificio.DivisionPisos(alturaPisos, pisos, 3, pisosPermitidosIC)
+
+	
+Cabidura -->
+	print("AislamientoLateral :" + AislamientoLateral)
+	print("AislamientoPosterior :" + AislamientoPosterior)
+	report("AislamientoLateral" , AislamientoLateral)
+	report("AislamientoPosterior", AislamientoPosterior)
+	report("Pisos Maximos", pisosMaximos)
+
+	extrude(alturaMaxima)
+	PrepararVoladizos 
+	Envelope
+	DecidirDibujarEdificio
+		
+DecidirDibujarEdificio -->
+	case dibujarEdificio:
+		comp(f){object.bottom: DistanciasAdicionales }
+		
+	else:
+		NIL
+		
+DistanciasAdicionales -->
+	setback(distanciaAdicionalFrontal){street.front: NIL | 
+			remainder:
+				setback(distanciaAdicionalPosterior){street.back: NIL |
+					remainder:
+						setback(distanciaAdicionalLateral){ street.side: NIL |
+							remainder: 
+								Edificio
+								
+						}
+					}
+				}
+		
+
+		
+Edificio -->
+	set(dimensionBase, geometry.area())
+	set(pisosPermitidosIC, areaTotalDesarollo/dimensionBase)
+	
+	mirror(false,false,true) #we have to flip since we selected the object bottom
+	extrude(alturaMaxima)
+	edificio.DivisionPisos(alturaPisos, pisos, pisosMaximos, pisosPermitidosIC)
+	
+	
+
+		
+		
+PrepararVoladizos -->
+	split(y){4 * alturaPisos: NIL | 
+			'1: NIL VoladizoEnvelope}
+
+					
+EdificioFachadaBase --> 
+	extrude(AislamientoLateral)
+	
+		
+
+Envelope -->
+	#color(1,1,1, 0.5)
+	comp(f) { all= offset(-0.1, border) BorderColor  }
+
+BorderColor -->
+	color(1,1,1)
+	
+	
+VoladizoEnvelope -->
+	comp(f){street.front: AreaVoladizo | all: NIL}
+
+Voladizo(piso) -->
+	case piso > 4:
+		comp(f){street.front: AreaVoladizo | all: Keep.}
+	else:
+		keep.
+	
+@Hidden
+attr distanciaVoladizo = 0 
+
+AreaVoladizo -->
+	set(distanciaVoladizo, CalcularDistanciaVoladizo(CalleFrontalNombre, FachadaConVoladizo))
+	report("Distancia Voladizo", distanciaVoladizo)
+	split(x){ 'FachadaConVoladizo: DibujarVoladizo |
+				1: NIL}
+
+DibujarVoladizo --> 
+	extrude(distanciaVoladizo)
+	Envelope
+
+
+	
+@Hidden
+attr areaReportada = ""
+
+		
+Jardines --> 
+	color(0,1,0)
+
+@Hidden	
+attr areaDeAnden = 0
+
+AndenFrontal --> 
+	color(1,1,0)
+	set(areaDeAnden, geometry.area())
+	report("Area de Anden", areaDeAnden)
+	report("Porcentaje", areaDeAnden/LoteArea)
+
+
+
